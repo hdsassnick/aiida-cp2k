@@ -17,12 +17,15 @@ from aiida.engine import ExitCode
 from aiida.orm import Dict
 from aiida.plugins import DataFactory
 
+from aiida_cp2k.utils.parser import parse_cp2k_output, parse_cp2k_trajectory
+
 StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 BandsData = DataFactory('array.bands')  # pylint: disable=invalid-name
 
 
 class Cp2kBaseParser(Parser):
     """Basic AiiDA parser for the output of CP2K."""
+    sections = []
 
     def parse(self, **kwargs):
         """Receives in input a dictionary of retrieved nodes. Does all the logic here."""
@@ -32,9 +35,11 @@ class Cp2kBaseParser(Parser):
         except exceptions.NotExistent:
             return self.exit_codes.ERROR_NO_RETRIEVED_FOLDER
 
-        exit_code = self._parse_stdout()
-        if exit_code is not None:
-            return exit_code
+        returned = self._parse_stdout()
+        if isinstance(returned, dict):
+            self._create_output_nodes(returned)
+        else:
+            return returned
 
         try:
             returned = self._parse_trajectory()
@@ -50,8 +55,6 @@ class Cp2kBaseParser(Parser):
     def _parse_stdout(self):
         """Basic CP2K output file parser."""
 
-        from aiida_cp2k.utils import parse_cp2k_output
-
         fname = self.node.get_attribute('output_filename')
 
         if fname not in self.retrieved.list_object_names():
@@ -62,26 +65,28 @@ class Cp2kBaseParser(Parser):
         except IOError:
             return self.exit_codes.ERROR_OUTPUT_STDOUT_READ
 
-        result_dict = parse_cp2k_output(output_string)
+        result_dict = parse_cp2k_output(output_string, self.sections)
 
+        # All exit_codes are triggered here
+        if "geo_not_converged" in result_dict:
+            return self.exit_codes.ERROR_GEOMETRY_CONVERGENCE_NOT_REACHED
+        if "uks_needed" in result_dict:
+            return self.exit_codes.ERROR_UKS_NEEDED
         if "aborted" in result_dict:
             return self.exit_codes.ERROR_OUTPUT_CONTAINS_ABORT
 
-        self.out("output_parameters", Dict(dict=result_dict))
-
-        return None
+        return result_dict
 
     def _parse_trajectory(self):
         """CP2K trajectory parser."""
 
         from ase import Atoms
-        from aiida_cp2k.utils import parse_cp2k_trajectory
 
         fname = self.node.process_class._DEFAULT_RESTART_FILE_NAME  # pylint: disable=protected-access
 
         # Check if the restart file is present.
         if fname not in self.retrieved.list_object_names():
-            raise exceptions.NotExistent("No restart file available, so the output trajectory can't be extracted")
+            raise exceptions.NotExistent("No restart file available, so the output trajectory can't be extracted.")
 
         # Read the restart file.
         try:
@@ -91,34 +96,14 @@ class Cp2kBaseParser(Parser):
 
         return StructureData(ase=Atoms(**parse_cp2k_trajectory(output_string)))
 
+    def _create_output_nodes(self, result_dict):
+        self.out("output_parameters", Dict(dict=result_dict))
 
 class Cp2kAdvancedParser(Cp2kBaseParser):
     """Advanced AiiDA parser class for the output of CP2K."""
+    sections = ['spin_density', 'natoms', 'scf_parameters', 'init_nel', 'kpoint_data', 'motion_info']
 
-    def _parse_stdout(self):
-        """Advanced CP2K output file parser."""
-
-        from aiida_cp2k.utils import parse_cp2k_output_advanced
-
-        fname = self.node.process_class._DEFAULT_OUTPUT_FILE  # pylint: disable=protected-access
-        if fname not in self.retrieved.list_object_names():
-            raise OutputParsingError("Cp2k output file not retrieved")
-
-        try:
-            output_string = self.retrieved.get_object_content(fname)
-        except IOError:
-            return self.exit_codes.ERROR_OUTPUT_STDOUT_READ
-
-        result_dict = parse_cp2k_output_advanced(output_string)
-
-        # nwarnings is the last thing to be printed in th eCP2K output file:
-        # if it is not there, CP2K didn't finish properly
-        if 'nwarnings' not in result_dict:
-            raise OutputParsingError("CP2K did not finish properly.")
-
-        if "aborted" in result_dict:
-            return self.exit_codes.ERROR_OUTPUT_CONTAINS_ABORT
-
+    def _create_output_nodes(result_dict):
         # Compute the bandgap for Spin1 and Spin2 if eigen was parsed (works also with smearing!)
         if 'eigen_spin1_au' in result_dict:
             if result_dict['dft_type'] == "RKS":
@@ -148,6 +133,4 @@ class Cp2kAdvancedParser(Cp2kBaseParser):
             )
             self.out("output_bands", bnds)
             del result_dict["kpoint_data"]
-
         self.out("output_parameters", Dict(dict=result_dict))
-        return None
