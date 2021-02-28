@@ -7,12 +7,8 @@
 ###############################################################################
 """AiiDA-CP2K output parser."""
 
-import io
-import os
-from aiida.common import exceptions
-
 from aiida.parsers import Parser
-from aiida.common import OutputParsingError, NotExistent
+from aiida.common import exceptions
 from aiida.engine import ExitCode
 from aiida.orm import Dict
 from aiida.plugins import DataFactory
@@ -35,10 +31,11 @@ class Cp2kBaseParser(Parser):
         except exceptions.NotExistent:
             return self.exit_codes.ERROR_NO_RETRIEVED_FOLDER
 
+        # Check if dictionary is returned and create output-nodes.
         returned = self._parse_stdout()
         if isinstance(returned, dict):
             self._create_output_nodes(returned)
-        else:
+        else:  # in case this is an error code
             return returned
 
         try:
@@ -99,11 +96,12 @@ class Cp2kBaseParser(Parser):
     def _create_output_nodes(self, result_dict):
         self.out("output_parameters", Dict(dict=result_dict))
 
+
 class Cp2kAdvancedParser(Cp2kBaseParser):
     """Advanced AiiDA parser class for the output of CP2K."""
     sections = ['spin_density', 'natoms', 'scf_parameters', 'init_nel', 'kpoint_data', 'motion_info']
 
-    def _create_output_nodes(result_dict):
+    def _create_output_nodes(self, result_dict):
         # Compute the bandgap for Spin1 and Spin2 if eigen was parsed (works also with smearing!)
         if 'eigen_spin1_au' in result_dict:
             if result_dict['dft_type'] == "RKS":

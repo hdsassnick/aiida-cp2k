@@ -61,7 +61,7 @@ def parse_cp2k_output(fstring, sections):  # pylint: disable=too-many-locals, to
             result_dict['exceeded_walltime'] = True
         if "ABORT" in line:
             result_dict["aborted"] = True
-        if  "MAXIMUM NUMBER OF OPTIMIZATION STEPS REACHED" in line:
+        if "MAXIMUM NUMBER OF OPTIMIZATION STEPS REACHED" in line:
             result_dict["geo_not_converged"] = True
         if "Use the LSD option for an odd number of electrons" in line:
             result_dict["uks_needed"] = True
@@ -69,7 +69,7 @@ def parse_cp2k_output(fstring, sections):  # pylint: disable=too-many-locals, to
         # Band structure output
         if 'kpoint_data' in sections:
             if "KPOINTS| Band Structure Calculation" in line:
-                kpoints, labels, bands = _parse_bands(lines, i_line)
+                kpoints, labels, bands = _parse_bands(lines, i_line, cp2k_version)
                 result_dict["kpoint_data"] = {
                     "kpoints": kpoints,
                     "labels": labels,
