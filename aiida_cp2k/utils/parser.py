@@ -111,6 +111,12 @@ def parse_cp2k_output(fstring, sections):  # pylint: disable=too-many-locals, to
             if re.search('Smear method', line):
                 result_dict['smear_method'] = line.split()[-1]
 
+        if 'spgr_information' in sections and 'spgr_information' not in result_dict:
+            if line.startswith(' SPGR|'):
+                result_dict['spgr_information'] = _parse_spgr_information(lines, i_line)
+
+
+
         if re.search(r"subspace spin", line):
             if int(line.split()[-1]) == 1:
                 line_is = 'eigen_spin1_au'
@@ -530,7 +536,6 @@ def parse_cp2k_output_advanced(fstring):  # pylint: disable=too-many-locals, too
         ####################################################################
         #  END PARSING GEO_OPT/CELL_OPT/MD STEP                            #
         ####################################################################
-
     return result_dict
 
 
@@ -608,6 +613,24 @@ def _parse_bands(lines, n_start, cp2k_version):
     return np.array(kpoints), labels, np.array(bands)
 
 
+def _parse_spgr_information(lines, n_start):
+    """Parse space group information in case 'KEEP_SPACE_GROUP' is set."""
+    spgr_information = {}
+    selected_lines = lines[n_start:n_start+4]
+
+    for line in selected_lines:
+        splitted = line.split()
+        if line.startswith(' SPGR| SPACE GROUP NUMBER:'):
+            spgr_information['sg_number'] = int(splitted[-1])
+        elif line.startswith(' SPGR| INTERNATIONAL SYMBOL:'):
+            spgr_information['int_symbol'] = splitted[-1]
+        elif line.startswith(' SPGR| POINT GROUP SYMBOL:'):
+            spgr_information['point_group_symbol'] = splitted[-1]
+        elif line.startswith(' SPGR| SCHOENFLIES SYMBOL:'):
+            spgr_information['schoenflies_symbol'] = splitted[-1]
+
+    return spgr_information
+
 def parse_cp2k_trajectory(content):
     """CP2K trajectory parser."""
 
@@ -640,4 +663,8 @@ def parse_cp2k_trajectory(content):
     cell_str = [line[1:] for line in cell_lines if line[0] in "ABC"]
     cell = np.array(cell_str, np.float64)
 
-    return {"symbols": symbols, "positions": positions, "cell": cell, "tags": tags}
+    # parse periodic boundary conditions
+    cell_pbc_str = next((line[-1] for line in cell_lines if line[0] == 'PERIODIC'), None)
+    cell_pbc = [(dir in cell_pbc_str) for dir in ['X', 'Y', 'Z']]
+
+    return {"symbols": symbols, "positions": positions, "cell": cell, "tags": tags, "pbc": cell_pbc}

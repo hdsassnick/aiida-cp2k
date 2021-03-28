@@ -117,9 +117,12 @@ class Cp2kCalculation(CalcJob):
         spec.exit_code(400,
                        'ERROR_OUT_OF_WALLTIME',
                        message='The calculation stopped prematurely because it ran out of walltime.')
-        spec.exit_code(500,
+        spec.exit_code(401,
                        'ERROR_GEOMETRY_CONVERGENCE_NOT_REACHED',
                        message='The ionic minimization cycle did not converge for the given thresholds.')
+        spec.exit_code(402,
+                       'ERROR_UKS_NEEDED',
+                       message='Odd number of electrons, use UKS or ROKS.')
 
         # Output parameters.
         spec.output('output_parameters',

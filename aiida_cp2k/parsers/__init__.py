@@ -32,22 +32,30 @@ class Cp2kBaseParser(Parser):
             return self.exit_codes.ERROR_NO_RETRIEVED_FOLDER
 
         # Check if dictionary is returned and create output-nodes.
-        returned = self._parse_stdout()
-        if isinstance(returned, dict):
-            self._create_output_nodes(returned)
-        else:  # in case this is an error code
-            return returned
+        result_dict = self._parse_stdout()
+        #if isinstance(returned, dict):
+        self._create_output_nodes(result_dict)
+        #else:  # in case this is an error code
+        #    return returned
 
         try:
-            returned = self._parse_trajectory()
-            if isinstance(returned, StructureData):
-                self.out('output_structure', returned)
+            output_structure = self._parse_trajectory()
+            if isinstance(output_structure, StructureData):
+                self.out('output_structure', output_structure)
             else:  # in case this is an error code
                 return returned
         except exceptions.NotExistent:
             pass
 
-        return ExitCode(0)
+        # All exit_codes are triggered here
+        if "geo_not_converged" in result_dict:
+            return self.exit_codes.ERROR_GEOMETRY_CONVERGENCE_NOT_REACHED
+        elif "uks_needed" in result_dict:
+            return self.exit_codes.ERROR_UKS_NEEDED
+        elif "aborted" in result_dict:
+            return self.exit_codes.ERROR_OUTPUT_CONTAINS_ABORT
+        else:
+            return ExitCode(0)
 
     def _parse_stdout(self):
         """Basic CP2K output file parser."""
@@ -63,14 +71,6 @@ class Cp2kBaseParser(Parser):
             return self.exit_codes.ERROR_OUTPUT_STDOUT_READ
 
         result_dict = parse_cp2k_output(output_string, self.sections)
-
-        # All exit_codes are triggered here
-        if "geo_not_converged" in result_dict:
-            return self.exit_codes.ERROR_GEOMETRY_CONVERGENCE_NOT_REACHED
-        if "uks_needed" in result_dict:
-            return self.exit_codes.ERROR_UKS_NEEDED
-        if "aborted" in result_dict:
-            return self.exit_codes.ERROR_OUTPUT_CONTAINS_ABORT
 
         return result_dict
 
@@ -99,7 +99,7 @@ class Cp2kBaseParser(Parser):
 
 class Cp2kAdvancedParser(Cp2kBaseParser):
     """Advanced AiiDA parser class for the output of CP2K."""
-    sections = ['spin_density', 'natoms', 'scf_parameters', 'init_nel', 'kpoint_data', 'motion_info']
+    sections = ['spin_density', 'natoms', 'scf_parameters', 'init_nel', 'kpoint_data', 'motion_info', 'spgr_information']
 
     def _create_output_nodes(self, result_dict):
         # Compute the bandgap for Spin1 and Spin2 if eigen was parsed (works also with smearing!)
